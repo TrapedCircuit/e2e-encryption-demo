@@ -17,11 +17,11 @@ pub struct Server {
 impl Server {
     pub fn from_env() -> Self {
         Self {
-            secret: std::env::var("SECRET").expect("SECRET must be set"),
+            secret: std::env::var("SECRET").unwrap_or("default_secret".to_string()),
             port: std::env::var("PORT")
-                .expect("PORT must be set")
+                .unwrap_or("7878".to_string())
                 .parse()
-                .unwrap_or(7878),
+                .expect("failed to parse port"),
         }
     }
 
@@ -33,6 +33,8 @@ impl Server {
         let addr = SocketAddr::new([0, 0, 0, 0].into(), self.port);
         let tls_config = create_tls_server_config()?;
         let rustls_config = RustlsConfig::from_config(Arc::new(tls_config));
+
+        tracing::info!("listening on {}", addr);
         axum_server::bind_rustls(addr, rustls_config)
             .serve(app.into_make_service())
             .await?;
