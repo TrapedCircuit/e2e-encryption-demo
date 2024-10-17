@@ -1,60 +1,48 @@
-ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
+# Rust manifest example
 
-SELF_EXE = target/release/e2e-encryption-demo
-SRC = $(wildcard src/*.rs) Cargo.toml
+libos.entrypoint = "{{ self_exe }}"
+loader.log_level = "{{ log_level }}"
 
-.PHONY: all
-all: $(SELF_EXE) e2e-encryption-demo.manifest
-ifeq ($(SGX),1)
-all: e2e-encryption-demo.manifest.sgx e2e-encryption-demo.sig
-endif
+loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}"
 
-ifeq ($(DEBUG),1)
-GRAMINE_LOG_LEVEL = debug
-else
-GRAMINE_LOG_LEVEL = error
-endif
+# See https://gramine.readthedocs.io/en/latest/devel/performance.html#glibc-malloc-tuning
+loader.env.MALLOC_ARENA_MAX = "1"
 
-# Note that we're compiling in release mode regardless of the DEBUG setting passed
-# to Make, as compiling in debug mode results in an order of magnitude's difference in
-# performance that makes testing by running a benchmark with ab painful. The primary goal
-# of the DEBUG setting is to control Gramine's loglevel.
--include $(SELF_EXE).d # See also: .cargo/config.toml
-$(SELF_EXE): $(SRC)
-	cargo build --release
+# For easier debugging — not strictly required to run this workload
+loader.env.RUST_BACKTRACE = "full"
+loader.insecure__use_cmdline_argv = true
 
-e2e-encryption-demo.manifest: e2e-encryption-demo.manifest.template
-	gramine-manifest \
-		-Dlog_level=$(GRAMINE_LOG_LEVEL) \
-		-Darch_libdir=$(ARCH_LIBDIR) \
-		-Dself_exe=$(SELF_EXE) \
-		$< $@
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+]
 
-# Make on Ubuntu <= 20.04 doesn't support "Rules with Grouped Targets" (`&:`),
-# see the helloworld example for details on this workaround.
-e2e-encryption-demo.manifest.sgx e2e-encryption-demo.sig: sgx_sign
-	@:
+sys.enable_extra_runtime_domain_names_conf = true
+sys.fds.limit = 65535
 
-.INTERMEDIATE: sgx_sign
-sgx_sign: e2e-encryption-demo.manifest $(SELF_EXE)
-	gramine-sgx-sign \
-		--manifest $< \
-		--output $<.sgx
+sgx.debug = false
+sgx.edmm_enable = false
+sgx.enclave_size = "1G"
+sgx.remote_attestation = "dcap"
 
-ifeq ($(SGX),)
-GRAMINE = gramine-direct
-else
-GRAMINE = gramine-sgx
-endif
+sgx.trusted_files = [
+  "file:{{ gramine.libos }}",
+  "file:{{ self_exe }}",
+  "file:{{ gramine.runtimedir() }}/",
+  "file:{{ arch_libdir }}/",
+]
 
-.PHONY: start-e2e-encryption-demo
-start-e2e-encryption-demo: all
-	$(GRAMINE) e2e-encryption-demo client
+# The maximum number of threads in a single process needs to be declared in advance.
+# You need to account for:
+# - one main thread
+# - any threads and threadpools you might be starting
+# - helper threads internal to Gramine — see:
+#   https://gramine.readthedocs.io/en/latest/manifest-syntax.html#number-of-threads
+sgx.max_threads = 128
 
-.PHONY: clean
-clean:
-	$(RM) -rf *.sig *.manifest.sgx *.manifest result-* OUTPUT
+loader.env.RUST_LOG = "info"
+loader.env.SGX = "1"
 
-.PHONY: distclean
-distclean: clean
-	$(RM) -rf target/ Cargo.lock
+## Add required service env blow
+loader.env.SECRET = { passthrough = true }
+loader.env.PORT = { passthrough = true }
