@@ -25,17 +25,32 @@ impl Server {
         }
     }
 
+    pub async fn serve_tls(&self) -> anyhow::Result<()> {
+        let app = Router::new()
+            .route("/secret", post(get_secrets))
+            .with_state(self.clone());
+
+        let addr = SocketAddr::new([127, 0, 0, 1].into(), self.port);
+
+        let tls_config = create_tls_server_config()?;
+        let rustls_config = RustlsConfig::from_config(Arc::new(tls_config));
+
+        tracing::info!("tls server listening on {}", addr);
+        axum_server::bind_rustls(addr, rustls_config)
+            .serve(app.into_make_service())
+            .await?;
+        Ok(())
+    }
+
     pub async fn serve(&self) -> anyhow::Result<()> {
         let app = Router::new()
             .route("/secret", post(get_secrets))
             .with_state(self.clone());
 
-        let addr = SocketAddr::new([0, 0, 0, 0].into(), self.port);
-        let tls_config = create_tls_server_config()?;
-        let rustls_config = RustlsConfig::from_config(Arc::new(tls_config));
+        let addr = SocketAddr::new([127, 0, 0, 1].into(), self.port);
 
         tracing::info!("listening on {}", addr);
-        axum_server::bind_rustls(addr, rustls_config)
+        axum_server::bind(addr)
             .serve(app.into_make_service())
             .await?;
         Ok(())
@@ -48,10 +63,15 @@ async fn get_secrets(
 ) -> (StatusCode, String) {
     tracing::info!("received request: {:?}", req);
     let GetSecretReq { attestation, .. } = req;
-    if verify_attestation(&attestation, None, None).is_ok() {
-        (StatusCode::OK, server.secret.clone())
-    } else {
-        (StatusCode::FORBIDDEN, "verification failed".to_string())
+    match verify_attestation(&attestation, None, None) {
+        Ok(report) => {
+            tracing::info!("attestation verified: {:?}", report);
+            (StatusCode::OK, server.secret.clone())
+        }
+        Err(e) => {
+            tracing::error!("attestation verification failed: {:?}", e);
+            (StatusCode::UNAUTHORIZED, "attestation verification failed".to_string())
+        }
     }
 }
 

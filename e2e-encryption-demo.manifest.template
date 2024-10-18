@@ -15,6 +15,7 @@ loader.insecure__use_cmdline_argv = true
 fs.mounts = [
   { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
   { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+  { path = "/etc/ssl/certs", uri = "file:ca-certificates.crt" },
 ]
 
 sys.enable_extra_runtime_domain_names_conf = true
@@ -30,6 +31,7 @@ sgx.trusted_files = [
   "file:{{ self_exe }}",
   "file:{{ gramine.runtimedir() }}/",
   "file:{{ arch_libdir }}/",
+  "file:ca-certificates.crt",
 ]
 
 # The maximum number of threads in a single process needs to be declared in advance.

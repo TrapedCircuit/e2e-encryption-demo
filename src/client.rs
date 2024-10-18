@@ -11,15 +11,20 @@ pub struct E2EClient {
 }
 
 impl E2EClient {
-    const URL: &'static str = "http://localhost:7878/get_secret";
+    const URL: &'static str = "http://127.0.0.1:7878/secret";
 
-    pub fn new() -> Self {
+    pub fn new_tls() -> Self {
         let tls_config = create_tls_client_config(None, None);
         let client = ClientBuilder::new()
             .use_preconfigured_tls(tls_config)
             .build()
             .expect("failed to build client");
 
+        Self { client }
+    }
+
+    pub fn new() -> Self {
+        let client = reqwest::Client::new();
         Self { client }
     }
 
